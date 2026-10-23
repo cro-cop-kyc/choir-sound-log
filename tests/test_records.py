@@ -15,9 +15,9 @@ class RecordTests(unittest.TestCase):
    with urllib.request.urlopen(urllib.request.Request(base+path,data=data,headers=headers or {'Content-Type':'application/json'})) as r:return json.load(r)
   try:
    source=Path(__file__).resolve().parents[2]/'20261018-하늘소리찬양대.mp4'
-   meta=dict(requestId=str(uuid.uuid4()),date='2026-10-18',operator='테스트',summary='수동 보완',improvement='초기 개선점',choirCount=30,microphones='1, 2, 5번',filename=source.name,test=True)
+   meta=dict(requestId=str(uuid.uuid4()),date='2026-10-18',operator='테스트',summary='수동 보완',improvement='초기 개선점',assignments=[{'name':'테스트 대원','microphone':'2'}],filename=source.name,test=True)
    record=request('/api/records',source.read_bytes(),{'X-Record-Metadata':quote(json.dumps(meta))})
-   self.assertEqual(record['choirCount'],30);self.assertEqual(record['microphones'],'1, 2, 5번')
+   self.assertEqual(record['assignments'],[{'name':'테스트 대원','microphone':'2'}])
    rid=record['id'];request('/api/improvements/'+rid,{'content':'수정된 개선점'})
    saved=request('/api/records')[0];self.assertEqual(saved['improvement'],'수정된 개선점');self.assertEqual(saved['summary'],'수동 보완')
    with server.db() as c:self.assertEqual(json.loads(c.execute('SELECT body FROM records WHERE id=?',(rid,)).fetchone()[0])['improvement'],'초기 개선점')

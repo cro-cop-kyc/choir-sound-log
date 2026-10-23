@@ -36,7 +36,7 @@ class Handler(BaseHTTPRequestHandler):
    if not r:return self.output(404,{'error':'기록이 없습니다.'})
    p=DATA/r[0];mime='video/mp4'
   else:
-   allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/engine.js':'engine.js','/style.css':'style.css'}
+   allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/engine.js':'engine.js','/assignments.js':'assignments.js','/style.css':'style.css'}
    if path not in allowed:return self.output(404,{'error':'페이지가 없습니다.'})
    p=ROOT/allowed[path];mime={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8'}[p.suffix[1:]]
   size=p.stat().st_size;start=0;end=size-1;partial=False
@@ -64,9 +64,16 @@ class Handler(BaseHTTPRequestHandler):
     for key in ['operator','summary','improvement']:
      if not isinstance(m.get(key),str) or not m[key].strip() or len(m[key])>10000:raise ValueError()
     if not 0<length<=1024**3 or not m.get('filename','').lower().endswith('.mp4'):raise ValueError()
-    count=m.get('choirCount')
-    if type(count) is not int or not 1<=count<=1000:raise ValueError()
-    if not isinstance(m.get('microphones'),str) or not m['microphones'].strip() or len(m['microphones'])>200:raise ValueError()
+    assignments=m.get('assignments')
+    if not isinstance(assignments,list) or not 1<=len(assignments)<=1000:raise ValueError()
+    used=set()
+    for person in assignments:
+     if not isinstance(person,dict) or not isinstance(person.get('name'),str) or not person['name'].strip() or len(person['name'])>80:raise ValueError()
+     mic=person.get('microphone','')
+     if not isinstance(mic,str) or (mic and (not mic.isascii() or not mic.isdigit() or not 1<=int(mic)<=9999)):raise ValueError()
+     if mic and int(mic) in used:raise ValueError()
+     if mic:used.add(int(mic))
+     person['name']=person['name'].strip()
     with db() as c:old=c.execute('SELECT body FROM records WHERE request_id=?',(m['requestId'],)).fetchone()
     if old:return self.output(200,json.loads(old[0]))
     rid=str(uuid.uuid4());temp=DATA/(rid+'.tmp');digest=hashlib.sha256();remaining=length
@@ -78,7 +85,7 @@ class Handler(BaseHTTPRequestHandler):
     with temp.open('rb') as f:head=f.read(64)
     if b'ftyp' not in head:raise ValueError()
     target=DATA/(rid+'.mp4');temp.replace(target);temp=None
-    r={k:m.get(k,'') for k in ['date','operator','summary','improvement','filename','choirCount','microphones']};r.update(id=rid,mode='manual',analysisStatus='failed',analysisError='NOT_CONFIGURED',created=now(),test=m.get('test') is True,sha256=digest.hexdigest(),size=length)
+    r={k:m.get(k,'') for k in ['date','operator','summary','improvement','filename','assignments']};r.update(id=rid,mode='manual',analysisStatus='failed',analysisError='NOT_CONFIGURED',created=now(),test=m.get('test') is True,sha256=digest.hexdigest(),size=length)
     with db() as c:c.execute('INSERT INTO records VALUES(?,?,?,?)',(rid,m['requestId'],json.dumps(r,ensure_ascii=False),target.name))
     target=None;return self.output(201,r)
    if path.startswith('/api/improvements/'):
