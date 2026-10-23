@@ -2,7 +2,7 @@ import {createEngine,messages} from './engine.js';
 const $=id=>document.getElementById(id),engine=createEngine();
 let records=[],busy=false,requestId=crypto.randomUUID();
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function api(url,options){const r=await fetch(url,options);const b=await r.json();if(!r.ok)throw Error(b.error||'저장 서버에 연결하지 못했습니다.');return b;}
+async function api(url,options){if(window.GITHUB_PAGES_MODE)return pagesApi(url,options);const r=await fetch(url,options);const b=await r.json();if(!r.ok)throw Error(b.error||'저장 서버에 연결하지 못했습니다.');return b;}
 function route(){for(const id of ['home','new','detail'])$(id).hidden=true;if(location.hash==='#new')$('new').hidden=false;else if(location.hash.startsWith('#record/')){const r=records.find(r=>r.id===location.hash.slice(8));if(r)renderRecord(r);else $('home').hidden=false;}else $('home').hidden=false;}
 addEventListener('hashchange',()=>{route();window.scrollTo({top:0,behavior:'instant'});});
 async function refresh(){records=await api('/api/records');let html='',year='',month='';for(const r of records){const y=r.date.slice(0,4),m=r.date.slice(5,7);if(y!==year){if(month)html+='</details>';if(year)html+='</details>';html+=`<details open><summary>${y}년</summary>`;year=y;month='';}if(m!==month){if(month)html+='</details>';html+=`<details open><summary>${m}월</summary>`;month=m;}html+=`<a class="record-link" href="#record/${r.id}">${esc(r.date.slice(8))}일 · ${r.test?'[테스트] ':''}수동 기록</a>`;}if(month)html+='</details>';if(year)html+='</details>';$('tree').innerHTML=html||'<p class="empty-nav">아직 생성된 기록이 없습니다.</p>';route();}
@@ -16,11 +16,11 @@ async function renderRecord(r){
  <div class="operator-badge"><span>온라인 송출 담당자</span><strong>${esc(r.operator)}</strong></div>
  <div class="setup-info"><div><span>찬양대 인원</span><strong>${r.choirCount?esc(r.choirCount)+'명':'미입력'}</strong></div><div><span>마이크 번호</span><strong>${esc(r.microphones||'미입력')}</strong></div></div>
  <div class="notice">수동 작성 · AI 분석 실패(엔진 미연결) · 아래 분석결과는 사람이 작성한 보완 기록입니다.</div>
- <video controls preload="metadata" src="/media/${r.id}"></video><p class="muted">${esc(r.filename)}</p>
+ ${window.GITHUB_PAGES_MODE ? (r.videoUrl && /^https:\/\//.test(r.videoUrl) ? `<video controls preload="metadata" src="${esc(r.videoUrl)}"></video>` : `<p class="notice">영상은 아직 온라인으로 연결하지 않았습니다.</p>`) : `<video controls preload="metadata" src="/media/${r.id}"></video>`}<p class="muted">${esc(r.filename)}</p>
  <article class="report-block"><h3>[AI 분석결과]</h3><p>${esc(r.summary)}</p></article>
  <article class="report-block"><div class="block-heading"><h3>개선할 점</h3><button class="small secondary" id="edit-improvement">수정</button></div><p id="improvement-text">${esc(r.improvement||'별도 기록 없음')}</p>
  <form id="improvement-form" hidden><label>개선할 점 수정<textarea id="improvement-edit" required maxlength="10000">${esc(r.improvement)}</textarea></label><p class="edit-error" role="alert"></p><div class="actions"><button class="small">저장</button><button type="button" class="small secondary" id="cancel-improvement">취소</button></div></form></article>
- <section class="discussion"><h3>함께 나누는 메모</h3><p class="muted">댓글을 남기고 수정하거나 삭제할 수 있습니다.</p><div id="comments"></div><form id="comment-form"><label>이름<input id="comment-name" required maxlength="80"></label><label>메모<textarea id="comment-memo" required maxlength="10000"></textarea></label><p id="comment-error" role="alert"></p><button>메모 남기기</button></form></section>`;
+`;
  $('edit-improvement').onclick=()=>{$('improvement-form').hidden=false;$('improvement-text').hidden=true;$('edit-improvement').hidden=true;$('improvement-edit').value=r.improvement||'';};
  $('cancel-improvement').onclick=()=>{$('improvement-form').hidden=true;$('improvement-text').hidden=false;$('edit-improvement').hidden=false;};
  $('improvement-form').onsubmit=async e=>{
@@ -28,27 +28,23 @@ async function renderRecord(r){
   try{await api('/api/improvements/'+r.id,jsonOptions({content:$('improvement-edit').value}));r.improvement=$('improvement-edit').value.trim();$('improvement-text').textContent=r.improvement;$('cancel-improvement').click();}
   catch(err){e.target.querySelector('.edit-error').textContent=err.message;}finally{b.disabled=false;}
  };
- $('comment-form').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{await api('/api/comments/'+r.id,jsonOptions({name:$('comment-name').value,memo:$('comment-memo').value}));e.target.reset();$('comment-error').textContent='';await loadComments(r.id);}catch(err){$('comment-error').textContent=err.message;}finally{b.disabled=false;}};
- await loadComments(r.id);
+
 }
 function jsonOptions(body){return {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};}
-async function loadComments(id){
- try{
-  const rows=await api('/api/comments/'+id);
-  if(location.hash!=='#record/'+id||!$('comments'))return;
-  $('comments').innerHTML=rows.map(c=>`<article class="comment" data-id="${esc(c.id)}"><div class="comment-content"><strong>${esc(c.name)}</strong><small>${new Date(c.created).toLocaleString('ko-KR')}${c.updated?' · 수정됨':''}</small><p>${esc(c.memo)}</p><div class="actions"><button class="small secondary comment-edit">수정</button><button class="small danger comment-delete">삭제</button></div></div>
-  <form class="comment-edit-form" hidden><label>이름 수정<input class="edit-name" required maxlength="80" value="${esc(c.name)}"></label><label>메모 수정<textarea class="edit-memo" required maxlength="10000">${esc(c.memo)}</textarea></label><div class="actions"><button class="small">저장</button><button type="button" class="small secondary cancel-edit">취소</button></div></form>
-  <div class="delete-confirm" hidden><p>이 댓글을 삭제할까요?</p><div class="actions"><button class="small danger confirm-delete">삭제 확인</button><button class="small secondary cancel-delete">취소</button></div></div><p class="edit-error" role="alert"></p></article>`).join('')||'<p class="muted">첫 메모를 남겨 주세요.</p>';
-  $('comments').querySelectorAll('.comment').forEach(el=>{
-   const content=el.querySelector('.comment-content'),form=el.querySelector('form'),confirmation=el.querySelector('.delete-confirm');
-   el.querySelector('.comment-edit').onclick=()=>{form.hidden=false;content.hidden=true;};
-   el.querySelector('.cancel-edit').onclick=()=>{form.hidden=true;content.hidden=false;};
-   el.querySelector('.comment-delete').onclick=()=>{confirmation.hidden=false;content.hidden=true;};
-   el.querySelector('.cancel-delete').onclick=()=>{confirmation.hidden=true;content.hidden=false;};
-   async function change(body,button){button.disabled=true;try{await api('/api/comment/'+el.dataset.id,jsonOptions(body));await loadComments(id);}catch(err){el.querySelector('.edit-error').textContent=err.message;button.disabled=false;}}
-   form.onsubmit=e=>{e.preventDefault();change({action:'edit',name:el.querySelector('.edit-name').value,memo:el.querySelector('.edit-memo').value},form.querySelector('button'));};
-   el.querySelector('.confirm-delete').onclick=e=>change({action:'delete'},e.target);
-  });
- }catch(err){if($('comments'))$('comments').textContent=err.message;}
-}
 route();refresh().catch(()=>{$('tree').textContent='로컬 저장 서버를 실행해 주세요. 새 기록 작성 화면은 열 수 있습니다.';});
+
+async function pagesApi(url,options){
+ if(url==='/api/records'&&!options){const response=await fetch('./records.json',{cache:'no-store'});if(!response.ok)throw Error('기록을 불러오지 못했습니다.');return response.json();}
+ if(url==='/api/records'&&options?.method==='POST'){
+  const m=JSON.parse(decodeURIComponent(options.headers['X-Record-Metadata']));
+  const record={...m,id:m.requestId,mode:'manual',analysisStatus:'failed',created:new Date().toISOString()};delete record.requestId;
+  const blob=new Blob([JSON.stringify(record,null,2)],{type:'application/json'}),href=URL.createObjectURL(blob),a=document.createElement('a');a.href=href;a.download=record.id+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(href),10000);
+  throw Error('기록 파일을 다운로드했습니다. 아래 GitHub 등록 링크에서 이 파일을 올리고 Commit changes를 완료하면 사이트에 반영됩니다. 아직 공유 기록으로 저장된 상태는 아닙니다.');
+ }
+ if(url.startsWith('/api/improvements/')){
+  const id=url.split('/').pop(),r=records.find(r=>r.id===id);
+  const a=document.createElement('a');a.href='https://github.com/cro-cop-kyc/choir-sound-log/edit/main/records/'+encodeURIComponent(r.sourceFile||id+'.json');a.target='_blank';a.rel='noopener';a.click();
+  throw Error('GitHub 편집 화면에서 improvement 값을 수정하고 Commit changes를 눌러 주세요. GitHub 로그인과 저장소 쓰기 권한이 필요합니다.');
+ }
+ throw Error('GitHub Pages에서는 이 작업을 지원하지 않습니다.');
+}

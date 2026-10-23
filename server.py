@@ -31,9 +31,6 @@ class Handler(BaseHTTPRequestHandler):
     if row[1] is not None:r.update(improvement=row[1],improvementUpdated=row[2])
     records.append(r)
    return self.output(200,sorted(records,key=lambda r:r['date'],reverse=True))
-  if path.startswith('/api/comments/'):
-   with db() as c:rows=c.execute('SELECT id,name,memo,created,updated FROM comments WHERE record_id=? AND deleted=0 ORDER BY created',(path.rsplit('/',1)[1],)).fetchall()
-   return self.output(200,[dict(r) for r in rows])
   if path.startswith('/media/'):
    with db() as c:r=c.execute('SELECT video FROM records WHERE id=?',(path.rsplit('/',1)[1],)).fetchone()
    if not r:return self.output(404,{'error':'기록이 없습니다.'})
@@ -84,7 +81,7 @@ class Handler(BaseHTTPRequestHandler):
     r={k:m.get(k,'') for k in ['date','operator','summary','improvement','filename','choirCount','microphones']};r.update(id=rid,mode='manual',analysisStatus='failed',analysisError='NOT_CONFIGURED',created=now(),test=m.get('test') is True,sha256=digest.hexdigest(),size=length)
     with db() as c:c.execute('INSERT INTO records VALUES(?,?,?,?)',(rid,m['requestId'],json.dumps(r,ensure_ascii=False),target.name))
     target=None;return self.output(201,r)
-   if path.startswith('/api/improvements/') or path.startswith('/api/comment/'):
+   if path.startswith('/api/improvements/'):
     if not 0<length<100000:raise ValueError()
     m=json.loads(self.rfile.read(length));item_id=path.rsplit('/',1)[1]
     with db() as c:
@@ -93,22 +90,7 @@ class Handler(BaseHTTPRequestHandler):
       if not isinstance(content,str) or not content.strip() or len(content)>10000:raise ValueError()
       if not c.execute('SELECT id FROM records WHERE id=?',(item_id,)).fetchone():return self.output(404,{'error':'기록을 찾을 수 없습니다.'})
       c.execute('INSERT INTO improvements VALUES(?,?,?) ON CONFLICT(record_id) DO UPDATE SET content=excluded.content,updated=excluded.updated',(item_id,content.strip(),now()))
-     else:
-      if not c.execute('SELECT id FROM comments WHERE id=? AND deleted=0',(item_id,)).fetchone():return self.output(404,{'error':'댓글을 찾을 수 없습니다.'})
-      if m.get('action')=='delete':c.execute('UPDATE comments SET deleted=1,updated=? WHERE id=?',(now(),item_id))
-      elif m.get('action')=='edit':
-       if not isinstance(m.get('name'),str) or not m['name'].strip() or len(m['name'])>80 or not isinstance(m.get('memo'),str) or not m['memo'].strip() or len(m['memo'])>10000:raise ValueError()
-       c.execute('UPDATE comments SET name=?,memo=?,updated=? WHERE id=?',(m['name'].strip(),m['memo'].strip(),now(),item_id))
-      else:raise ValueError()
     return self.output(200,{'ok':True})
-   if path.startswith('/api/comments/'):
-    if not 0<length<50000:raise ValueError()
-    m=json.loads(self.rfile.read(length));rid=path.rsplit('/',1)[1]
-    if not m.get('name','').strip() or not m.get('memo','').strip():raise ValueError()
-    with db() as c:
-     if not c.execute('SELECT id FROM records WHERE id=?',(rid,)).fetchone():raise ValueError()
-     c.execute('INSERT INTO comments(id,record_id,name,memo,created) VALUES(?,?,?,?,?)',(str(uuid.uuid4()),rid,m['name'][:80],m['memo'][:10000],now()))
-    return self.output(201,{'ok':True})
    return self.output(404,{'error':'지원하지 않는 요청입니다.'})
   except sqlite3.IntegrityError:
    with db() as c:old=c.execute('SELECT body FROM records WHERE request_id=?',(m.get('requestId',''),)).fetchone()
