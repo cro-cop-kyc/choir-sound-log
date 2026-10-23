@@ -1,0 +1,10 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {createEngine} from '../engine.js';
+const input={date:'2026-10-18',operator:'담당자',file:{name:'choir.mp4',size:123}};
+test('unconfigured engine never generates a result',async()=>{await assert.rejects(createEngine().analyze(input,'1'),{code:'NOT_CONFIGURED'});});
+test('invalid input fails before calling adapter',async()=>{let calls=0;const e=createEngine({analyze:()=>{calls++;}});await assert.rejects(e.analyze({...input,file:{name:'a.txt',size:1}},'1'),{code:'INVALID_FILE'});assert.equal(calls,0);});
+test('duplicate concurrent submit is blocked',async()=>{let done;let calls=0;const e=createEngine({analyze:()=>{calls++;return new Promise(r=>done=r);}});const first=e.analyze(input,'1');await assert.rejects(e.analyze(input,'1'),{code:'BUSY'});done({summary:'ok',findings:[]});await first;assert.equal(calls,1);});
+test('timeout aborts and never automatically retries',async()=>{let calls=0;let signal;const e=createEngine({analyze:(_,o)=>{calls++;signal=o.signal;return new Promise(()=>{});}},10);await assert.rejects(e.analyze(input,'1'),{code:'TIMEOUT'});assert.equal(calls,1);assert.equal(signal.aborted,true);});
+test('malformed result is rejected',async()=>{await assert.rejects(createEngine({analyze:async()=>({})}).analyze(input,'1'),{code:'INVALID_RESPONSE'});});
+test('network failure is normalized',async()=>{await assert.rejects(createEngine({analyze:async()=>{throw Error('secret diagnostic');}}).analyze(input,'1'),{code:'NETWORK'});});
