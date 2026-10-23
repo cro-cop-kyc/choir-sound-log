@@ -36,9 +36,9 @@ class Handler(BaseHTTPRequestHandler):
    if not r:return self.output(404,{'error':'기록이 없습니다.'})
    p=DATA/r[0];mime='video/mp4'
   else:
-   allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/engine.js':'engine.js','/assignments.js':'assignments.js','/github-records.js':'github-records.js','/github-store.js':'github-store.js','/admin-ui.js':'admin-ui.js','/style.css':'style.css'}
+   allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/engine.js':'engine.js','/assignments.js':'assignments.js','/github-records.js':'github-records.js','/github-store.js':'github-store.js','/admin-ui.js':'admin-ui.js','/oauth-session.js':'oauth-session.js','/auth-config.json':'auth-config.json','/style.css':'style.css'}
    if path not in allowed:return self.output(404,{'error':'페이지가 없습니다.'})
-   p=ROOT/allowed[path];mime={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8'}[p.suffix[1:]]
+   p=ROOT/allowed[path];mime={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','json':'application/json'}[p.suffix[1:]]
   size=p.stat().st_size;start=0;end=size-1;partial=False
   try:
    if self.headers.get('Range','').startswith('bytes='):

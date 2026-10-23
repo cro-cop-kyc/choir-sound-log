@@ -1,7 +1,18 @@
+import {createOAuthSession} from './oauth-session.js';
 export function installAdminUI(store,onChange){
- const panel=document.createElement('dialog');panel.id='admin-dialog';panel.innerHTML=`<form id="admin-form"><h2>관리자 GitHub 연결</h2><p>cro-cop-kyc 계정의 저장소 전용 키로 연결합니다. 키는 이 화면의 메모리에만 보관합니다.</p><p><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub에서 전용 키 만들기</a></p><p class="muted">Only select repositories → choir-sound-log 선택<br>Repository permissions → Contents: Read and write<br>발급한 키는 아래 칸에만 입력하세요.</p><label>GitHub 전용 키<input id="admin-key" type="password" autocomplete="off" required></label><p id="admin-error" role="alert"></p><button>관리자 연결</button><button type="button" class="small secondary" id="admin-cancel">닫기</button></form>`;document.body.append(panel);
- const button=document.createElement('button');button.id='admin-toggle';button.className='small secondary';button.textContent='관리자 연결';document.querySelector('header').append(button);
- button.onclick=()=>{if(store.connected){store.disconnect();button.textContent='관리자 연결';onChange();}else panel.showModal();};document.getElementById('admin-cancel').onclick=()=>panel.close();
- panel.querySelector('form').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{const user=await store.connect(document.getElementById('admin-key').value);document.getElementById('admin-key').value='';button.textContent=user+' · 연결 해제';panel.close();await onChange();}catch(err){document.getElementById('admin-error').textContent=err.message;}finally{b.disabled=false;}};
- panel.addEventListener('close',()=>{document.getElementById('admin-key').value='';});
+ const button=document.createElement('button');button.id='admin-toggle';button.className='small secondary';button.textContent='GitHub로 로그인';document.querySelector('header').append(button);
+ const panel=document.createElement('dialog');panel.id='admin-dialog';panel.innerHTML='<h2>GitHub 계정 연결</h2><p id="admin-message" role="status"></p><button id="admin-close" class="small secondary">닫기</button>';document.body.append(panel);document.getElementById('admin-close').onclick=()=>panel.close();
+ button.onclick=async()=>{
+  if(store.connected){store.disconnect();button.textContent='GitHub로 로그인';await onChange();return;}
+  button.disabled=true;
+  try{
+   const response=await fetch('./auth-config.json',{cache:'no-store'});if(!response.ok)throw Error('계정 연결 설정을 불러오지 못했습니다.');
+   const config=await response.json();
+   if(!config.authorizationService)throw Error('GitHub 계정 연결 앱 설정이 아직 완료되지 않았습니다. 현재는 기록 열람만 가능합니다.');
+   const service=new URL(config.authorizationService);if(service.protocol!=='https:')throw Error('계정 연결 주소가 올바르지 않습니다.');
+   const session=await createOAuthSession(service.href).login();
+   const user=await store.connect(session);button.textContent=user+' · 로그아웃';await onChange();
+  }catch(error){store.disconnect();document.getElementById('admin-message').textContent=error.message;panel.showModal();}
+  finally{button.disabled=false;}
+ };
 }

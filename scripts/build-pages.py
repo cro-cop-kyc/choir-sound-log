@@ -2,7 +2,7 @@
 from pathlib import Path
 import json,shutil
 root=Path(__file__).resolve().parents[1];out=root/'dist';out.mkdir(exist_ok=True)
-for name in ['index.html','style.css','app.js','engine.js','assignments.js','github-store.js','admin-ui.js']:shutil.copyfile(root/name,out/name)
+for name in ['index.html','style.css','app.js','engine.js','assignments.js','github-store.js','admin-ui.js','oauth-session.js','auth-config.json']:shutil.copyfile(root/name,out/name)
 html=(out/'index.html').read_text(encoding='utf-8')
 html=html.replace('<script type="module"','<script>window.GITHUB_PAGES_MODE=true;</script><script type="module"')
 html=html.replace('MP4 최대 1GB · 수동 기록 확정 시 이 PC의 저장소에 영상이 보관됩니다.','영상은 선택 사항입니다. 선택한 MP4는 저장 시 GitHub Releases에 업로드됩니다.')

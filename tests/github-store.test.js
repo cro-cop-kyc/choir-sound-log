@@ -23,10 +23,10 @@ test('visitors cannot save, delete or upload',async()=>{
  const {store}=fixture();await assert.rejects(store.save({id:ID}),/관리자/);await assert.rejects(store.remove({id:ID}),/관리자/);await assert.rejects(store.uploadVideo({size:1},ID),/관리자/);
 });
 test('only site owner can connect',async()=>{
- const {store}=fixture('someone-else');await assert.rejects(store.connect('test-only-key'),/관리자 계정/);assert.equal(store.connected,false);
+ const {store}=fixture('someone-else');await assert.rejects(store.connect({service:'https://auth.test',session:'test-only-encrypted-session'}),/관리자 계정/);assert.equal(store.connected,false);
 });
 test('save, reread, edit, conflict, deletion and disconnect',async()=>{
- const {store,writes}=fixture();await store.connect('test-only-key');
+ const {store,writes}=fixture();await store.connect({service:'https://auth.test',session:'test-only-encrypted-session'});
  const record={id:ID,date:'2026-10-24',summary:'한글 기록',assignments:[{name:'가상대원',microphone:'2'}]};
  const saved=await store.save(record);assert.equal((await store.list())[0].summary,'한글 기록');assert.equal(saved._sha,'1');
  await store.save(record);assert.deepEqual(writes,['PUT']);
