@@ -1,3 +1,4 @@
+import {newRecordUrl} from './github-records.js';
 import {normalizeAssignments} from './assignments.js';
 import {createEngine,messages} from './engine.js';
 const $=id=>document.getElementById(id),engine=createEngine();
@@ -9,8 +10,8 @@ addEventListener('hashchange',()=>{route();window.scrollTo({top:0,behavior:'inst
 async function refresh(){records=await api('/api/records');let html='',year='',month='';for(const r of records){const y=r.date.slice(0,4),m=r.date.slice(5,7);if(y!==year){if(month)html+='</details>';if(year)html+='</details>';html+=`<details open><summary>${y}년</summary>`;year=y;month='';}if(m!==month){if(month)html+='</details>';html+=`<details open><summary>${m}월</summary>`;month=m;}html+=`<a class="record-link" href="#record/${r.id}">${esc(r.date.slice(8))}일 · ${r.test?'[테스트] ':''}수동 기록</a>`;}if(month)html+='</details>';if(year)html+='</details>';$('tree').innerHTML=html||'<p class="empty-nav">아직 생성된 기록이 없습니다.</p>';route();}
 const now=new Date();$('date').value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 $('file').addEventListener('change',()=>{$('filename').textContent=$('file').files[0]?.name||'선택된 파일이 없습니다.';$('manual').hidden=true;requestId=crypto.randomUUID();});
-$('form').addEventListener('submit',async e=>{e.preventDefault();if(busy)return;if(!$('form').reportValidity())return;try{readAssignments();$('assignment-error').textContent='';}catch(err){$('assignment-error').textContent=err.message;return;}busy=true;$('submit').disabled=true;try{await engine.analyze({date:$('date').value,operator:$('operator').value,file:$('file').files[0]},requestId);}catch(error){$('error').textContent='AI 분석 실패 · '+(messages[error.code]||'분석을 완료하지 못했습니다.');$('error').hidden=false;if(!['INVALID_INPUT','INVALID_FILE','BUSY'].includes(error.code)){$('manual').hidden=false;$('manual').scrollIntoView({behavior:'smooth',block:'start'});}}finally{busy=false;$('submit').disabled=false;}});
-$('manual-form').addEventListener('submit',async e=>{e.preventDefault();if(busy)return;if(!$('form').reportValidity())return;busy=true;$('save').disabled=true;$('save').textContent='영상과 기록 저장 중…';$('manual-error').hidden=true;try{const m={requestId,date:$('date').value,operator:$('operator').value,filename:$('file').files[0].name,test:$('test').checked,assignments:readAssignments()};for(const k of ['summary','improvement'])m[k]=$(k).value;const r=await api('/api/records',{method:'POST',headers:{'Content-Type':'video/mp4','X-Record-Metadata':encodeURIComponent(JSON.stringify(m))},body:$('file').files[0]});requestId=crypto.randomUUID();$('manual-form').reset();$('manual').hidden=true;$('error').hidden=true;await refresh();location.hash=`record/${r.id}`;}catch(error){$('manual-error').textContent=error.message||'연결 실패: 입력 내용은 유지됩니다.';$('manual-error').hidden=false;}finally{busy=false;$('save').disabled=false;$('save').textContent='수동 기록 확정';}});
+$('form').addEventListener('submit',async e=>{e.preventDefault();if(busy)return;if(!$('form').reportValidity())return;try{readAssignments();$('assignment-error').textContent='';}catch(err){$('assignment-error').textContent=err.message;return;}if(window.GITHUB_PAGES_MODE){$('manual').hidden=false;$('error').hidden=true;$('manual').scrollIntoView({behavior:'smooth',block:'start'});return;}busy=true;$('submit').disabled=true;try{await engine.analyze({date:$('date').value,operator:$('operator').value,file:$('file').files[0]},requestId);}catch(error){$('error').textContent='AI 분석 실패 · '+(messages[error.code]||'분석을 완료하지 못했습니다.');$('error').hidden=false;if(!['INVALID_INPUT','INVALID_FILE','BUSY'].includes(error.code)){$('manual').hidden=false;$('manual').scrollIntoView({behavior:'smooth',block:'start'});}}finally{busy=false;$('submit').disabled=false;}});
+$('manual-form').addEventListener('submit',async e=>{e.preventDefault();if(busy)return;if(!$('form').reportValidity())return;busy=true;$('save').disabled=true;$('save').textContent='영상과 기록 저장 중…';$('manual-error').hidden=true;try{const m={requestId,date:$('date').value,operator:$('operator').value,filename:$('file').files[0]?.name||'',test:$('test').checked,assignments:readAssignments()};for(const k of ['summary','improvement'])m[k]=$(k).value;const r=await api('/api/records',{method:'POST',headers:{'Content-Type':'video/mp4','X-Record-Metadata':encodeURIComponent(JSON.stringify(m))},body:$('file').files[0]});requestId=crypto.randomUUID();$('manual-form').reset();$('manual').hidden=true;$('error').hidden=true;await refresh();location.hash=`record/${r.id}`;}catch(error){if(!error.pending)$('manual-error').textContent=error.message||'연결 실패: 입력 내용은 유지됩니다.';$('manual-error').hidden=false;}finally{busy=false;$('save').disabled=false;$('save').textContent=window.GITHUB_PAGES_MODE?'GitHub에 기록 저장':'수동 기록 확정';}});
 async function renderRecord(r){
  $('detail').hidden=false;
  $('detail').innerHTML=`<p class="eyebrow">COMMITTED RECORD</p><h2 class="page-title">${esc(r.date)} 찬양 기록 ${r.test?'<small>[테스트]</small>':''}</h2>
@@ -39,13 +40,14 @@ async function pagesApi(url,options){
  if(url==='/api/records'&&options?.method==='POST'){
   const m=JSON.parse(decodeURIComponent(options.headers['X-Record-Metadata']));
   const record={...m,id:m.requestId,mode:'manual',analysisStatus:'failed',created:new Date().toISOString()};delete record.requestId;
-  const blob=new Blob([JSON.stringify(record,null,2)],{type:'application/json'}),href=URL.createObjectURL(blob),a=document.createElement('a');a.href=href;a.download=record.id+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(href),10000);
-  throw Error('기록 파일을 다운로드했습니다. 아래 GitHub 등록 링크에서 이 파일을 올리고 Commit changes를 완료하면 사이트에 반영됩니다. 아직 공유 기록으로 저장된 상태는 아닙니다.');
+  const link=document.createElement('a');link.href=newRecordUrl(record);link.target='_blank';link.rel='noopener';link.textContent='GitHub 저장 화면 열기';
+  $('manual-error').replaceChildren('작성 내용을 GitHub 저장 화면으로 전달합니다. 마지막 Commit changes를 눌러야 공유 기록으로 반영됩니다. ',link);$('manual-error').hidden=false;link.click();
+  const waiting=new Error('GitHub 저장 화면에서 Commit changes를 완료해 주세요. 완료 후 사이트가 자동 갱신됩니다. 파일 다운로드는 하지 않습니다.');waiting.pending=true;throw waiting;
  }
  if(url.startsWith('/api/improvements/')){
   const id=url.split('/').pop(),r=records.find(r=>r.id===id);
   const a=document.createElement('a');a.href='https://github.com/cro-cop-kyc/choir-sound-log/edit/main/records/'+encodeURIComponent(r.sourceFile||id+'.json');a.target='_blank';a.rel='noopener';a.click();
-  throw Error('GitHub 편집 화면에서 improvement 값을 수정하고 Commit changes를 눌러 주세요. GitHub 로그인과 저장소 쓰기 권한이 필요합니다.');
+  throw Error('GitHub 편집 화면에서 improvement 값을 수정하고 Commit changes를 눌러 주세요. 저장소 쓰기 권한이 필요합니다.');
  }
  throw Error('GitHub Pages에서는 이 작업을 지원하지 않습니다.');
 }
