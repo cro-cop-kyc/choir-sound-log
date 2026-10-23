@@ -1,4 +1,0 @@
-import {readFileSync as read,writeFileSync as write,mkdirSync,copyFileSync} from 'node:fs';
-const assets={};for(const [url,file,type] of [['/','index.html','text/html; charset=utf-8'],['/index.html','index.html','text/html; charset=utf-8'],['/app.js','app.js','text/javascript; charset=utf-8'],['/engine.js','engine.js','text/javascript; charset=utf-8'],['/style.css','style.css','text/css; charset=utf-8']])assets[url]={body:read(file,'utf8'),type};
-mkdirSync('dist/server',{recursive:true});mkdirSync('dist/.openai',{recursive:true});
-write('dist/server/index.js','const ASSETS='+JSON.stringify(assets)+';\n'+read('worker/access.js','utf8').replaceAll('export ','')+'\n'+read('worker/index.js','utf8').replace("import {guard,protectionHeaders} from './access.js';",''));copyFileSync('.openai/hosting.json','dist/.openai/hosting.json');console.log('Online Worker built');
