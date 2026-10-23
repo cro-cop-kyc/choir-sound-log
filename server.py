@@ -1,12 +1,21 @@
-import json, sqlite3, uuid, datetime, hashlib
+import json, sqlite3, uuid, datetime, hashlib, os
+from contextlib import contextmanager
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import unquote, urlparse
-ROOT=Path(__file__).parent.resolve(); DATA=ROOT/'data'; DATA.mkdir(exist_ok=True)
+ROOT=Path(__file__).parent.resolve(); DATA=Path(os.environ.get('CHOIR_DATA_DIR',ROOT/'data')); DATA.mkdir(exist_ok=True)
+@contextmanager
 def db():
- c=sqlite3.connect(DATA/'records.sqlite'); c.row_factory=sqlite3.Row; return c
+ c=sqlite3.connect(DATA/'records.sqlite');c.row_factory=sqlite3.Row
+ try:
+  with c:yield c
+ finally:c.close()
 with db() as c:
  c.executescript("CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY, request_id TEXT UNIQUE, body TEXT, video TEXT); CREATE TABLE IF NOT EXISTS comments(id TEXT PRIMARY KEY, record_id TEXT, name TEXT, memo TEXT, created TEXT); CREATE TRIGGER IF NOT EXISTS immutable_records BEFORE UPDATE ON records BEGIN SELECT RAISE(ABORT,'immutable'); END;")
+ c.execute('CREATE TABLE IF NOT EXISTS improvements(record_id TEXT PRIMARY KEY, content TEXT NOT NULL, updated TEXT NOT NULL)')
+ columns={r[1] for r in c.execute('PRAGMA table_info(comments)')}
+ for name,definition in [('updated',"TEXT NOT NULL DEFAULT ''"),('deleted','INTEGER NOT NULL DEFAULT 0')]:
+  if name not in columns:c.execute(f'ALTER TABLE comments ADD COLUMN {name} {definition}')
 def now():return datetime.datetime.now(datetime.timezone.utc).isoformat()
 class Handler(BaseHTTPRequestHandler):
  def output(self,code,obj):
@@ -14,10 +23,16 @@ class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   path=urlparse(self.path).path
   if path=='/api/records':
-   with db() as c:rows=c.execute('SELECT body FROM records').fetchall()
-   return self.output(200,sorted([json.loads(r[0]) for r in rows],key=lambda r:r['date'],reverse=True))
+   with db() as c:
+    rows=c.execute('SELECT r.body,i.content,i.updated FROM records r LEFT JOIN improvements i ON r.id=i.record_id').fetchall()
+   records=[]
+   for row in rows:
+    r=json.loads(row[0])
+    if row[1] is not None:r.update(improvement=row[1],improvementUpdated=row[2])
+    records.append(r)
+   return self.output(200,sorted(records,key=lambda r:r['date'],reverse=True))
   if path.startswith('/api/comments/'):
-   with db() as c:rows=c.execute('SELECT name,memo,created FROM comments WHERE record_id=? ORDER BY created',(path.rsplit('/',1)[1],)).fetchall()
+   with db() as c:rows=c.execute('SELECT id,name,memo,created,updated FROM comments WHERE record_id=? AND deleted=0 ORDER BY created',(path.rsplit('/',1)[1],)).fetchall()
    return self.output(200,[dict(r) for r in rows])
   if path.startswith('/media/'):
    with db() as c:r=c.execute('SELECT video FROM records WHERE id=?',(path.rsplit('/',1)[1],)).fetchone()
@@ -49,9 +64,12 @@ class Handler(BaseHTTPRequestHandler):
    length=int(self.headers.get('Content-Length','0'))
    if path=='/api/records':
     m=json.loads(unquote(self.headers.get('X-Record-Metadata','')));datetime.date.fromisoformat(m['date']);uuid.UUID(m['requestId'])
-    for key in ['operator','summary','improvement','nextStep']:
+    for key in ['operator','summary','improvement']:
      if not isinstance(m.get(key),str) or not m[key].strip() or len(m[key])>10000:raise ValueError()
     if not 0<length<=1024**3 or not m.get('filename','').lower().endswith('.mp4'):raise ValueError()
+    count=m.get('choirCount')
+    if type(count) is not int or not 1<=count<=1000:raise ValueError()
+    if not isinstance(m.get('microphones'),str) or not m['microphones'].strip() or len(m['microphones'])>200:raise ValueError()
     with db() as c:old=c.execute('SELECT body FROM records WHERE request_id=?',(m['requestId'],)).fetchone()
     if old:return self.output(200,json.loads(old[0]))
     rid=str(uuid.uuid4());temp=DATA/(rid+'.tmp');digest=hashlib.sha256();remaining=length
@@ -63,25 +81,42 @@ class Handler(BaseHTTPRequestHandler):
     with temp.open('rb') as f:head=f.read(64)
     if b'ftyp' not in head:raise ValueError()
     target=DATA/(rid+'.mp4');temp.replace(target);temp=None
-    r={k:m.get(k,'') for k in ['date','operator','summary','strength','improvement','nextStep','filename']};r.update(id=rid,mode='manual',analysisStatus='failed',analysisError='NOT_CONFIGURED',created=now(),test=m.get('test') is True,sha256=digest.hexdigest(),size=length)
+    r={k:m.get(k,'') for k in ['date','operator','summary','improvement','filename','choirCount','microphones']};r.update(id=rid,mode='manual',analysisStatus='failed',analysisError='NOT_CONFIGURED',created=now(),test=m.get('test') is True,sha256=digest.hexdigest(),size=length)
     with db() as c:c.execute('INSERT INTO records VALUES(?,?,?,?)',(rid,m['requestId'],json.dumps(r,ensure_ascii=False),target.name))
     target=None;return self.output(201,r)
+   if path.startswith('/api/improvements/') or path.startswith('/api/comment/'):
+    if not 0<length<100000:raise ValueError()
+    m=json.loads(self.rfile.read(length));item_id=path.rsplit('/',1)[1]
+    with db() as c:
+     if path.startswith('/api/improvements/'):
+      content=m.get('content')
+      if not isinstance(content,str) or not content.strip() or len(content)>10000:raise ValueError()
+      if not c.execute('SELECT id FROM records WHERE id=?',(item_id,)).fetchone():return self.output(404,{'error':'기록을 찾을 수 없습니다.'})
+      c.execute('INSERT INTO improvements VALUES(?,?,?) ON CONFLICT(record_id) DO UPDATE SET content=excluded.content,updated=excluded.updated',(item_id,content.strip(),now()))
+     else:
+      if not c.execute('SELECT id FROM comments WHERE id=? AND deleted=0',(item_id,)).fetchone():return self.output(404,{'error':'댓글을 찾을 수 없습니다.'})
+      if m.get('action')=='delete':c.execute('UPDATE comments SET deleted=1,updated=? WHERE id=?',(now(),item_id))
+      elif m.get('action')=='edit':
+       if not isinstance(m.get('name'),str) or not m['name'].strip() or len(m['name'])>80 or not isinstance(m.get('memo'),str) or not m['memo'].strip() or len(m['memo'])>10000:raise ValueError()
+       c.execute('UPDATE comments SET name=?,memo=?,updated=? WHERE id=?',(m['name'].strip(),m['memo'].strip(),now(),item_id))
+      else:raise ValueError()
+    return self.output(200,{'ok':True})
    if path.startswith('/api/comments/'):
     if not 0<length<50000:raise ValueError()
     m=json.loads(self.rfile.read(length));rid=path.rsplit('/',1)[1]
     if not m.get('name','').strip() or not m.get('memo','').strip():raise ValueError()
     with db() as c:
      if not c.execute('SELECT id FROM records WHERE id=?',(rid,)).fetchone():raise ValueError()
-     c.execute('INSERT INTO comments VALUES(?,?,?,?,?)',(str(uuid.uuid4()),rid,m['name'][:80],m['memo'][:10000],now()))
+     c.execute('INSERT INTO comments(id,record_id,name,memo,created) VALUES(?,?,?,?,?)',(str(uuid.uuid4()),rid,m['name'][:80],m['memo'][:10000],now()))
     return self.output(201,{'ok':True})
    return self.output(404,{'error':'지원하지 않는 요청입니다.'})
   except sqlite3.IntegrityError:
    with db() as c:old=c.execute('SELECT body FROM records WHERE request_id=?',(m.get('requestId',''),)).fetchone()
    return self.output(200,json.loads(old[0])) if old else self.output(409,{'error':'이미 처리된 요청입니다.'})
-  except (ValueError,KeyError,TypeError):return self.output(400,{'error':'날짜, 필수 항목, MP4 형식 및 1GB 파일 제한을 확인해 주세요.'})
+  except (ValueError,KeyError,TypeError):return self.output(400,{'error':'필수 항목, 인원(1~1000명), 입력 길이 또는 MP4 형식과 1GB 제한을 확인해 주세요.'})
   except Exception:return self.output(500,{'error':'저장 실패: 입력을 유지하고 같은 요청으로 재시도해 주세요.'})
   finally:
    if temp:temp.unlink(missing_ok=True)
    if target:target.unlink(missing_ok=True)
 if __name__=='__main__':
- print('http://127.0.0.1:4174',flush=True);ThreadingHTTPServer(('127.0.0.1',4174),Handler).serve_forever()
+ port=int(os.environ.get('CHOIR_PORT','4174'));print(f'http://127.0.0.1:{port}',flush=True);ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
