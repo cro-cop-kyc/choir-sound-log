@@ -1,6 +1,6 @@
 """Build only public web assets; never publish local databases, comments or videos."""
 from pathlib import Path
-import json,shutil
+import json,shutil,hashlib,re
 root=Path(__file__).resolve().parents[1];out=root/'dist';out.mkdir(exist_ok=True)
 for name in ['index.html','style.css','app.js','engine.js','assignments.js','github-store.js','admin-ui.js','oauth-session.js','auth-config.json']:shutil.copyfile(root/name,out/name)
 html=(out/'index.html').read_text(encoding='utf-8')
@@ -17,4 +17,14 @@ for p in sorted((root/'records').glob('*.json')):
  r=json.loads(p.read_text(encoding='utf-8'));r['sourceFile']=p.name;records.append(r)
 (out/'records.json').write_text(json.dumps(records,ensure_ascii=False),encoding='utf-8')
 (out/'.nojekyll').touch()
+assets=['app.js','engine.js','assignments.js','github-store.js','admin-ui.js','oauth-session.js','style.css','auth-config.json']
+version=hashlib.sha256(b''.join((out/name).read_bytes() for name in assets)).hexdigest()[:12]
+for name in assets:
+ if name.endswith('.js'):
+  content=(out/name).read_text(encoding='utf-8')
+  content=re.sub(r"(from ['\"]\./[^'\"]+\.js)(['\"])",lambda m:m[1]+'?v='+version+m[2],content)
+  content=content.replace("'./auth-config.json'","'./auth-config.json?v="+version+"'")
+  (out/name).write_text(content,encoding='utf-8')
+html=(out/'index.html').read_text(encoding='utf-8').replace('src="app.js"','src="app.js?v='+version+'"').replace('href="style.css"','href="style.css?v='+version+'"')
+(out/'index.html').write_text(html,encoding='utf-8')
 print('GitHub Pages assets ready:',len(records),'records')
