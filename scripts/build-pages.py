@@ -1,6 +1,7 @@
-"""Build only public web assets; never publish local databases, comments or videos."""
+"""Build public assets and explicitly published release videos, never local data."""
 from pathlib import Path
-import json,shutil,hashlib,re
+import json,shutil,hashlib,re,sys,urllib.request
+from urllib.parse import urlparse
 root=Path(__file__).resolve().parents[1];out=root/'dist';out.mkdir(exist_ok=True)
 for name in ['index.html','style.css','app.js','engine.js','assignments.js','github-store.js','admin-ui.js','oauth-session.js','auth-config.json','analysis-segments.js']:shutil.copyfile(root/name,out/name)
 html=(out/'index.html').read_text(encoding='utf-8')
@@ -15,6 +16,17 @@ html=html.replace('<button id="save">수동 기록 확정</button>','<button id=
 records=[]
 for p in sorted((root/'records').glob('*.json')):
  r=json.loads(p.read_text(encoding='utf-8'));r['sourceFile']=p.name;records.append(r)
+ if '--include-media' in sys.argv and r.get('videoAssetUrl'):
+  source=r['videoAssetUrl'];target=urlparse(r['videoUrl'])
+  if not source.startswith('https://github.com/cro-cop-kyc/choir-sound-log/releases/download/') or target.netloc!='cro-cop-kyc.github.io' or not re.fullmatch(r'/choir-sound-log/media/[a-zA-Z0-9_-]+\.mp4',target.path):
+   raise ValueError('Invalid published video location')
+  media=out/'media'/Path(target.path).name;media.parent.mkdir(exist_ok=True)
+  digest=hashlib.sha256()
+  with urllib.request.urlopen(source,timeout=120) as response,media.open('wb') as dest:
+   while chunk:=response.read(1024*1024):
+    digest.update(chunk);dest.write(chunk)
+  if 'sha256:'+digest.hexdigest()!=r.get('videoSha256'):
+   media.unlink();raise ValueError('Published video checksum mismatch')
 (out/'records.json').write_text(json.dumps(records,ensure_ascii=False),encoding='utf-8')
 (out/'.nojekyll').touch()
 assets=['app.js','engine.js','assignments.js','github-store.js','admin-ui.js','oauth-session.js','style.css','auth-config.json','analysis-segments.js']

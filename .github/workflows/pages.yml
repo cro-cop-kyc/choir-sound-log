@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python scripts/build-pages.py
+      - run: python scripts/build-pages.py --include-media
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

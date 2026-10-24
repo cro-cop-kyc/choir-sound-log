@@ -40,7 +40,8 @@
       "finding": "소리가 갑자기 커집니다. 앞뒤 부분과 함께 들으며 자연스럽게 이어지는지 확인해 보세요."
     }
   ],
-  "videoUrl": "https://github.com/cro-cop-kyc/choir-sound-log/releases/download/choir-20261018/20261018-haneulsori.mp4",
+  "videoUrl": "https://cro-cop-kyc.github.io/choir-sound-log/media/20261018-haneulsori.mp4",
+  "videoAssetUrl": "https://github.com/cro-cop-kyc/choir-sound-log/releases/download/choir-20261018/20261018-haneulsori.mp4",
   "releaseId": 422399379,
   "size": 143847539,
   "videoSha256": "sha256:24cd43fe7772f93c903cadbf6b6292a0cc9386b28d166eff0872e6a5f2641899"
