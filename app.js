@@ -21,14 +21,15 @@ async function renderRecord(r){
  $('detail').innerHTML=`<p class="eyebrow">COMMITTED RECORD</p><button class="small danger" id="delete-record" ${window.GITHUB_PAGES_MODE&&github.connected?'':'hidden'}>기록 삭제</button><p id="delete-error" role="alert"></p><h2 class="page-title">${esc(r.date)} ${esc(r.title||'찬양 기록')} ${r.test?'<small>[테스트]</small>':''}</h2>
  <div class="operator-badge"><span>온라인 송출 담당자</span><strong>${esc(r.operator)}</strong></div>
  ${renderAssignments(r)}
- <div class="notice">${r.mode==='measurement_review'?'최초 파일 신호 분석 결과 · 직접 청취 없이 측정한 기록입니다. 구간 시간은 추출 영상 기준이며 원본은 51:21~55:20입니다.':'수동 작성 · AI 분석 실패(엔진 미연결) · 아래 분석결과는 사람이 작성한 보완 기록입니다.'}</div>
+ ${r.mode==='measurement_review'?'':'<div class="notice">수동으로 작성한 분석 기록입니다.</div>'}
  ${window.GITHUB_PAGES_MODE ? (r.videoUrl && /^https:\/\//.test(r.videoUrl) ? `<video id="record-video" controls preload="metadata" src="${esc(r.videoUrl)}"></video>` : `<p class="notice">영상은 아직 온라인으로 연결하지 않았습니다.</p>`) : `<video id="record-video" controls preload="metadata" src="/media/${r.id}"></video>`}<p class="muted">${esc(r.filename)}</p>
  ${renderSegments(r)}<article class="report-block"><h3>[AI 분석결과]</h3><p>${esc(r.summary)}</p>${Array.isArray(r.frequencyBands)?`<h3>주파수별 에너지 분포</h3><table class="assignment-table"><thead><tr><th>주파수 대역</th><th>비율</th></tr></thead><tbody>${r.frequencyBands.map(b=>`<tr><td>${esc(b.band)}</td><td>${esc(b.percent)}%</td></tr>`).join('')}</tbody></table>`:''}</article>
- <article class="report-block"><div class="block-heading"><h3>개선할 점</h3><button class="small secondary" id="edit-improvement" ${canWrite()?'':'hidden'}>수정</button></div><p id="improvement-text">${esc(r.improvement||'별도 기록 없음')}</p>
- <form id="improvement-form" hidden><label>개선할 점 수정<textarea id="improvement-edit" required maxlength="10000">${esc(r.improvement)}</textarea></label><p class="edit-error" role="alert"></p><div class="actions"><button class="small">저장</button><button type="button" class="small secondary" id="cancel-improvement">취소</button></div></form></article>
+ ${r.improvement?`<article class="report-block"><div class="block-heading"><h3>개선할 점</h3><button class="small secondary" id="edit-improvement" ${canWrite()?'':'hidden'}>수정</button></div><p id="improvement-text">${esc(r.improvement||'별도 기록 없음')}</p>
+ <form id="improvement-form" hidden><label>개선할 점 수정<textarea id="improvement-edit" required maxlength="10000">${esc(r.improvement)}</textarea></label><p class="edit-error" role="alert"></p><div class="actions"><button class="small">저장</button><button type="button" class="small secondary" id="cancel-improvement">취소</button></div></form></article>`:''}
 `;
  $('detail').querySelectorAll('[data-segment-start]').forEach(button=>{button.onclick=()=>{const video=$('record-video');if(!video)return;seekToSegment(video,Number(button.dataset.segmentStart));video.scrollIntoView({behavior:'smooth',block:'center'});$('detail').querySelectorAll('[data-segment-start]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));};});
  $('delete-record').onclick=async()=>{if(!github.connected)return;if(!confirm('이 기록을 사이트와 GitHub에서 삭제할까요? 변경 이력은 GitHub에 남고 첨부 영상은 보존됩니다.'))return;$('delete-record').disabled=true;try{await github.remove(r);location.hash='';await refresh();}catch(err){$('delete-error').textContent=err.message;$('delete-record').disabled=false;}};
+ if($('edit-improvement')){
  $('edit-improvement').onclick=()=>{$('improvement-form').hidden=false;$('improvement-text').hidden=true;$('edit-improvement').hidden=true;$('improvement-edit').value=r.improvement||'';};
  $('cancel-improvement').onclick=()=>{$('improvement-form').hidden=true;$('improvement-text').hidden=false;$('edit-improvement').hidden=false;};
  $('improvement-form').onsubmit=async e=>{
@@ -36,6 +37,7 @@ async function renderRecord(r){
   try{await api('/api/improvements/'+r.id,jsonOptions({content:$('improvement-edit').value}));r.improvement=$('improvement-edit').value.trim();$('improvement-text').textContent=r.improvement;$('cancel-improvement').click();}
   catch(err){e.target.querySelector('.edit-error').textContent=err.message;}finally{b.disabled=false;}
  };
+ }
 
 }
 function jsonOptions(body){return {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};}
@@ -79,5 +81,5 @@ if(window.GITHUB_PAGES_MODE){installAdminUI(github,async()=>{applyAccess();await
 
 function renderSegments(r){
  if(!Array.isArray(r.segments)||!r.segments.length)return '';
- return `<article class="report-block"><h3>구간별 분석 · 클릭해서 영상 이동</h3><p class="muted">각 항목을 누르면 해당 구간 시작으로 이동합니다. 재생 중이면 계속 재생되고, 일시정지 상태면 해당 시점에서 멈춥니다.</p><div class="analysis-segments">${r.segments.map(s=>`<button type="button" class="segment-jump" data-segment-start="${Number(s.start)}" aria-pressed="false"><strong>${esc(s.label)}</strong><small>전체 원본 시각 ${esc(s.originalTime)}</small><span>${esc(s.finding)}</span></button>`).join('')}</div></article>`;
+ return `<article class="report-block"><h3>구간별 분석 · 클릭해서 영상 이동</h3><p class="muted">각 항목을 누르면 해당 구간 시작으로 이동합니다. 재생 중이면 계속 재생되고, 일시정지 상태면 해당 시점에서 멈춥니다.</p><div class="analysis-segments">${r.segments.map(s=>`<button type="button" class="segment-jump" data-segment-start="${Number(s.start)}" aria-pressed="false"><strong>${esc(s.label)}</strong><span>${esc(s.finding)}</span></button>`).join('')}</div></article>`;
 }
