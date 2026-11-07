@@ -9,10 +9,16 @@ test('first analysis timestamps are inside the uploaded 239 second video',()=>{
  assert.deepEqual(r.segments.map(s=>s.start),[69,135,140,175,205]);
 });
 test('loaded video jumps exactly to the selected start',()=>{
- const video={duration:239,readyState:1,currentTime:0,removeEventListener(){}};
- for(const start of [69,135,140,175,205]){seekToSegment(video,start);assert.equal(video.currentTime,start);}
+ const video={duration:239,readyState:1,currentTime:0,play(){this.playCount=(this.playCount||0)+1;return Promise.resolve();},removeEventListener(){}};
+ for(const start of [69,135,140,175,205]){seekToSegment(video,start);assert.equal(video.currentTime,start);assert.ok(video.playCount>0);}
 });
 test('latest click wins if metadata is still loading',()=>{
- const listeners=new Set();const video={duration:239,readyState:0,currentTime:0,addEventListener(_,cb){listeners.add(cb);},removeEventListener(_,cb){listeners.delete(cb);},load(){}};
+ const listeners=new Set();const video={duration:239,readyState:0,currentTime:0,play(){this.playCount=(this.playCount||0)+1;return Promise.resolve();},addEventListener(_,cb){listeners.add(cb);},removeEventListener(_,cb){listeners.delete(cb);},load(){}};
  seekToSegment(video,69);seekToSegment(video,205);assert.equal(listeners.size,1);for(const callback of listeners)callback();assert.equal(video.currentTime,205);
+});
+
+test('blocked playback reports an actionable failure',async()=>{
+ const video={duration:239,readyState:1,currentTime:0,play(){return Promise.reject(Error('blocked'));}};
+ let failure;seekToSegment(video,135,error=>{failure=error;});await Promise.resolve();
+ assert.equal(video.currentTime,135);assert.equal(failure.message,'blocked');
 });

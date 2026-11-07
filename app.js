@@ -27,7 +27,7 @@ async function renderRecord(r){
  ${r.improvement?`<article class="report-block"><div class="block-heading"><h3>개선할 점</h3><button class="small secondary" id="edit-improvement" ${canWrite()?'':'hidden'}>수정</button></div><p id="improvement-text">${esc(r.improvement||'별도 기록 없음')}</p>
  <form id="improvement-form" hidden><label>개선할 점 수정<textarea id="improvement-edit" required maxlength="10000">${esc(r.improvement)}</textarea></label><p class="edit-error" role="alert"></p><div class="actions"><button class="small">저장</button><button type="button" class="small secondary" id="cancel-improvement">취소</button></div></form></article>`:''}
 `;
- $('detail').querySelectorAll('[data-segment-start]').forEach(button=>{button.onclick=()=>{const video=$('record-video');if(!video)return;seekToSegment(video,Number(button.dataset.segmentStart));video.scrollIntoView({behavior:'smooth',block:'center'});$('detail').querySelectorAll('[data-segment-start]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));};});
+ $('detail').querySelectorAll('[data-segment-start]').forEach(button=>{button.onclick=()=>{const video=$('record-video');if(!video)return;$('segment-play-error').textContent='';seekToSegment(video,Number(button.dataset.segmentStart),()=>{$('segment-play-error').textContent='재생을 시작하지 못했습니다. 영상의 재생 버튼을 눌러 주세요.';});video.scrollIntoView({behavior:'smooth',block:'center'});$('detail').querySelectorAll('[data-segment-start]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));};});
  $('delete-record').onclick=async()=>{if(!github.connected)return;if(!confirm('이 기록을 사이트와 GitHub에서 삭제할까요? 변경 이력은 GitHub에 남고 첨부 영상은 보존됩니다.'))return;$('delete-record').disabled=true;try{await github.remove(r);location.hash='';await refresh();}catch(err){$('delete-error').textContent=err.message;$('delete-record').disabled=false;}};
  if($('edit-improvement')){
  $('edit-improvement').onclick=()=>{$('improvement-form').hidden=false;$('improvement-text').hidden=true;$('edit-improvement').hidden=true;$('improvement-edit').value=r.improvement||'';};
@@ -81,5 +81,5 @@ if(window.GITHUB_PAGES_MODE){installAdminUI(github,async()=>{applyAccess();await
 
 function renderSegments(r){
  if(!Array.isArray(r.segments)||!r.segments.length)return '';
- return `<article class="report-block"><h3>구간별 분석 · 클릭해서 영상 이동</h3><p class="muted">각 항목을 누르면 해당 구간 시작으로 이동합니다. 재생 중이면 계속 재생되고, 일시정지 상태면 해당 시점에서 멈춥니다.</p><div class="analysis-segments">${r.segments.map(s=>`<button type="button" class="segment-jump" data-segment-start="${Number(s.start)}" aria-pressed="false"><strong>${esc(s.label)}</strong><span>${esc(s.finding)}</span></button>`).join('')}</div></article>`;
+ return `<article class="report-block"><h3>구간별 분석 · 클릭해서 영상 이동</h3><p class="muted">각 항목을 누르면 해당 구간으로 이동하고 영상이 바로 재생됩니다.</p><p id="segment-play-error" role="status"></p><div class="analysis-segments">${r.segments.map(s=>`<button type="button" class="segment-jump" data-segment-start="${Number(s.start)}" aria-pressed="false"><strong>${esc(s.label)}</strong><span>${esc(s.finding)}</span></button>`).join('')}</div></article>`;
 }
