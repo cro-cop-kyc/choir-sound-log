@@ -13,6 +13,7 @@ html=html.replace('AI 분석을 시도하고, 실패하면 수동 작성으로 �
 html=html.replace('AI 분석 실패로 직접 작성하는 보완 기록입니다. 저장 후에도 수동 작성 표시가 남습니다.','직접 작성한 기록입니다. 저장하면 GitHub에 반영되고 이 사이트에서 모두가 볼 수 있습니다.')
 html=html.replace('<button id="save">수동 기록 확정</button>','<button id="save">GitHub에 기록 저장</button>')
 (out/'index.html').write_text(html,encoding='utf-8')
+if (root/'media').exists(): shutil.copytree(root/'media',out/'media',dirs_exist_ok=True)
 records=[]
 for p in sorted((root/'records').glob('*.json')):
  r=json.loads(p.read_text(encoding='utf-8'));r['sourceFile']=p.name;records.append(r)
